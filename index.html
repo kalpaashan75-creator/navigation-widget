@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenRouteService Navigation Widget</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .nav-widget {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-width: 400px;
+        }
+        
+        .input-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        
+        input[type="text"]:focus {
+            border-color: #007acc;
+            outline: none;
+        }
+        
+        .btn-primary {
+            background: #007acc;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            width: 100%;
+            margin-top: 10px;
+        }
+        
+        .btn-primary:hover {
+            background: #005a99;
+        }
+        
+        .btn-primary:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .results {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 4px;
+            border-left: 4px solid #007acc;
+            display: none;
+        }
+        
+        .route-info {
+            margin-bottom: 10px;
+        }
+        
+        .route-info strong {
+            color: #007acc;
+        }
+        
+        .directions {
+            background: white;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        
+        .directions ol {
+            padding-left: 20px;
+            margin: 0;
+        }
+        
+        .directions li {
+            margin-bottom: 5px;
+            line-height: 1.4;
+        }
+        
+        .error {
+            color: #d32f2f;
+            background: #ffebee;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            border-left: 4px solid #d32f2f;
+        }
+        
+        .loading {
+            text-align: center;
+            color: #666;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav-widget">
+        <h3 style="margin-top: 0; color: #333;">Navigation</h3>
+        
+        <div class="input-group">
+            <label for="startLocation">From:</label>
+            <input type="text" id="startLocation" placeholder="Enter starting location">
+        </div>
+        
+        <div class="input-group">
+            <label for="endLocation">To:</label>
+            <input type="text" id="endLocation" placeholder="Enter destination">
+        </div>
+        
+        <button class="btn-primary" onclick="getRoute()">Get Directions</button>
+        
+        <div id="results" class="results"></div>
+    </div>
+
+    <script>
+        const API_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImZjMWMxYmM5NGFkNzRjNTNhM2MwYjIxYWJjZDk0YTU2IiwiaCI6Im11cm11cjY0In0='; // OpenRouteService API Key
+        
+        async function geocodeLocation(address) {
+            try {
+                const response = await fetch(`https://api.openrouteservice.org/geocode/search?api_key=${API_KEY}&text=${encodeURIComponent(address)}`);
+                const data = await response.json();
+                
+                if (data.features && data.features.length > 0) {
+                    const coords = data.features[0].geometry.coordinates;
+                    return { lon: coords[0], lat: coords[1] };
+                }
+                throw new Error('Location not found');
+            } catch (error) {
+                throw new Error(`Geocoding failed: ${error.message}`);
+            }
+        }
+        
+        async function getRoute() {
+            const startInput = document.getElementById('startLocation').value.trim();
+            const endInput = document.getElementById('endLocation').value.trim();
+            const resultsDiv = document.getElementById('results');
+            const button = document.querySelector('.btn-primary');
+            
+            if (!startInput || !endInput) {
+                showError('Please enter both starting location and destination');
+                return;
+            }
+            
+            if (!API_KEY || API_KEY === 'YOUR_OPENROUTESERVICE_API_KEY') {
+                showError('Please add your OpenRouteService API key to use this widget');
+                return;
+            }
+            
+            // Show loading
+            resultsDiv.innerHTML = '<div class="loading">Finding route...</div>';
+            resultsDiv.style.display = 'block';
+            button.disabled = true;
+            
+            try {
+                // Geocode locations
+                const startCoords = await geocodeLocation(startInput);
+                const endCoords = await geocodeLocation(endInput);
+                
+                // Get route
+                const routeResponse = await fetch(`https://api.openrouteservice.org/v2/directions/driving-car`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': API_KEY,
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        coordinates: [[startCoords.lon, startCoords.lat], [endCoords.lon, endCoords.lat]],
+                        format: 'json',
+                        instructions: true,
+                        language: 'en'
+                    })
+                });
+                
+                const routeData = await routeResponse.json();
+                
+                if (routeData.routes && routeData.routes.length > 0) {
+                    displayRoute(routeData.routes[0]);
+                } else {
+                    throw new Error('No route found');
+                }
+                
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                button.disabled = false;
+            }
+        }
+        
+        function displayRoute(route) {
+            const resultsDiv = document.getElementById('results');
+            const summary = route.summary;
+            const segments = route.segments;
+            
+            let html = `
+                <div class="route-info">
+                    <strong>Distance:</strong> ${(summary.distance / 1000).toFixed(1)} km<br>
+                    <strong>Duration:</strong> ${Math.round(summary.duration / 60)} minutes
+                </div>
+                <div class="directions">
+                    <h4 style="margin-top: 0;">Turn-by-turn directions:</h4>
+                    <ol>
+            `;
+            
+            segments.forEach(segment => {
+                segment.steps.forEach(step => {
+                    if (step.instruction) {
+                        html += `<li>${step.instruction}</li>`;
+                    }
+                });
+            });
+            
+            html += `
+                    </ol>
+                </div>
+            `;
+            
+            resultsDiv.innerHTML = html;
+            resultsDiv.style.display = 'block';
+        }
+        
+        function showError(message) {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = `<div class="error">${message}</div>`;
+            resultsDiv.style.display = 'block';
+        }
+        
+        // Allow Enter key to trigger route search
+        document.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                getRoute();
+            }
+        });
+    </script>
+</body>
+</html>
